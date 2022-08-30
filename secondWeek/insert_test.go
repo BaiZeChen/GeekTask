@@ -100,7 +100,7 @@ func TestInsertStmt(t *testing.T) {
 			},
 			wantArgs: []interface{}{int64(123), ptrInt64(456), uint64(789),
 				sql.NullString{String: "Tom", Valid: true}, &sql.NullInt32{Int32: 18, Valid: true}, "China", "DM"},
-			wantSQL: "INSERT INTO `Customer`(`CreateTime`,`UpdateTime`,`Id`,`NickName`,`Age`,`Address`,`Company`) VALUES(?,?,?,?,?,?,?);",
+			wantSQL: "INSERT INTO `customer`(`create_time`,`update_time`,`id`,`nick_name`,`age`,`address`,`company`) VALUES(123,456,789,Tom,18,China,DM);",
 		},
 		{
 			// 使用指针的组合，我们不会深入解析，会出现很奇怪的结果

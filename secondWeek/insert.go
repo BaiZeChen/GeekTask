@@ -50,11 +50,7 @@ func InsertStmt(entity interface{}) (string, []interface{}, error) {
 	// 再一次遍历所有的字段，要拼接成 INSERT INTO XXX(col1, col2, col3) VALUES(?,?,?)
 	// 注意，在第一次遍历的时候我们就已经拿到了参数的值，所以这里就是简单拼接 ?,?,?
 	var args []interface{}
-	record := make(map[interface{}]interface{})
-	getSqlValue(refVal, &bd, 0, record)
-	for _, value := range record {
-		args = append(args, value)
-	}
+	args = getSqlValue(refVal, &bd, 0, args, make(map[string]struct{}))
 
 	return bd.String(), args, nil
 }
@@ -89,8 +85,7 @@ func getSqlFile(typ reflect.Type, sqlStr *strings.Builder, lv int, record map[st
 			// 查看是否是SQL.NullXXX结构体
 			_, ok := v.Type.MethodByName("Value")
 			if !ok {
-				temp := lv + 1
-				getSqlFile(v.Type, sqlStr, temp, record)
+				getSqlFile(v.Type, sqlStr, lv+1, record)
 				continue
 			}
 		}
@@ -108,75 +103,82 @@ func getSqlFile(typ reflect.Type, sqlStr *strings.Builder, lv int, record map[st
 
 }
 
-func getSqlValue(refVal reflect.Value, sqlStr *strings.Builder, lv int, record map[interface{}]interface{}) {
+func getSqlValue(refVal reflect.Value, sqlStr *strings.Builder, lv int, arg []interface{}, record map[string]struct{}) []interface{} {
 
 	filedLen := refVal.NumField()
 	for i := 0; i < filedLen; i++ {
 		var file string
 		v := refVal.Field(i)
-		switch v.Kind() {
-		case reflect.Int64:
-			if v.IsZero() {
-				file = "0"
-			} else {
-				file = strconv.FormatInt(v.Int(), 10)
-			}
-			record[v.Addr()] = v.Interface()
-		case reflect.Uint64:
-			if v.IsZero() {
-				file = "0"
-			} else {
-				file = strconv.FormatUint(v.Uint(), 10)
-			}
-			record[v.Addr()] = v.Interface()
-		case reflect.Ptr:
-			if v.IsZero() {
-				// 这里暴力处理一下，只要是nil，全部转换成NULL
-				file = "NULL"
-			} else {
-				_, ok := v.Elem().Type().MethodByName("Value")
-				if !ok {
-					file = strconv.FormatInt(v.Elem().Int(), 10)
+		filedName := v.Type().Name()
+		if _, ok := record[filedName]; !ok {
+			switch v.Kind() {
+			case reflect.Int64:
+				if v.IsZero() {
+					file = "0"
 				} else {
-					if v.Elem().FieldByName("Valid").Bool() {
-						file = getNullValue(v.Elem())
+					file = strconv.FormatInt(v.Int(), 10)
+				}
+				arg = append(arg, v.Interface())
+			case reflect.Uint64:
+				if v.IsZero() {
+					file = "0"
+				} else {
+					file = strconv.FormatUint(v.Uint(), 10)
+				}
+				arg = append(arg, v.Interface())
+			case reflect.Ptr:
+				if v.IsZero() {
+					// 这里暴力处理一下，只要是nil，全部转换成NULL
+					file = "NULL"
+				} else {
+					_, ok := v.Elem().Type().MethodByName("Value")
+					if !ok {
+						file = strconv.FormatInt(v.Elem().Int(), 10)
+					} else {
+						if v.Elem().FieldByName("Valid").Bool() {
+							file = getNullValue(v.Elem())
+						} else {
+							file = "NULL"
+						}
+					}
+				}
+				arg = append(arg, v.Interface())
+			case reflect.Struct:
+				// 查看是否是SQL.NullXXX结构体
+				_, ok := v.Type().MethodByName("Value")
+				if !ok {
+					res := getSqlValue(v, sqlStr, lv+1, arg, record)
+					arg = append(arg, res...)
+					record[filedName] = struct{}{}
+					continue
+				} else {
+					if v.FieldByName("Valid").Bool() {
+						file = getNullValue(v)
 					} else {
 						file = "NULL"
 					}
+					arg = append(arg, v.Interface())
 				}
-			}
-			record[v.Addr()] = v.Interface()
-		case reflect.Struct:
-			// 查看是否是SQL.NullXXX结构体
-			_, ok := v.Type().MethodByName("Value")
-			if !ok {
-				temp := lv + 1
-				getSqlValue(v, sqlStr, temp, record)
-				continue
-			} else {
-				if v.FieldByName("Valid").Bool() {
-					file = getNullValue(v)
+			case reflect.String:
+				if v.IsZero() {
+					file = ""
 				} else {
-					file = "NULL"
+					file = v.String()
 				}
-				record[v.Addr()] = v.Interface()
+				arg = append(arg, v.Interface())
 			}
-		case reflect.String:
-			if v.IsZero() {
-				file = ""
-			} else {
-				file = v.String()
-			}
-			record[v.Addr()] = v.Interface()
-		}
 
-		if ((i + 1) == filedLen) && (lv == 0) {
-			sqlStr.WriteString(file + ");")
-		} else {
-			sqlStr.WriteString(file + ",")
+			if ((i + 1) == filedLen) && (lv == 0) {
+				sqlStr.WriteString(file + ");")
+			} else {
+				sqlStr.WriteString(file + ",")
+			}
+
 		}
 
 	}
+
+	return arg
 
 }
 
