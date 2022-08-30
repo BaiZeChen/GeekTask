@@ -57,7 +57,7 @@ func TestInsertStmt(t *testing.T) {
 			},
 			wantArgs: []interface{}{int64(123), ptrInt64(456), uint64(789),
 				sql.NullString{String: "Tom", Valid: true}, (*sql.NullInt32)(nil)},
-			wantSQL: "INSERT INTO `User`(`CreateTime`,`UpdateTime`,`Id`,`NickName`,`Age`) VALUES(?,?,?,?,?);",
+			wantSQL: "INSERT INTO `user`(`create_time`,`update_time`,`id`,`nick_name`,`age`) VALUES(123,456,789,Tom,NULL);",
 		},
 		{
 			name: "deep composition",
@@ -75,7 +75,7 @@ func TestInsertStmt(t *testing.T) {
 			},
 			wantArgs: []interface{}{int64(123), ptrInt64(456), uint64(789),
 				sql.NullString{String: "Tom", Valid: true}, &sql.NullInt32{Int32: 18, Valid: true}, "China"},
-			wantSQL: "INSERT INTO `Buyer`(`CreateTime`,`UpdateTime`,`Id`,`NickName`,`Age`,`Address`) VALUES(?,?,?,?,?,?);",
+			wantSQL: "INSERT INTO `buyer`(`create_time`,`update_time`,`id`,`nick_name`,`age`,`address`) VALUES(123,456,789,Tom,18,China);",
 		},
 		{
 			name: "multiple composition",

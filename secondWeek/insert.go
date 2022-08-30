@@ -28,7 +28,7 @@ func InsertStmt(entity interface{}) (string, []interface{}, error) {
 		typ = typ.Elem()
 		refVal = refVal.Elem()
 	}
-
+	// 只支持一级指针
 	if typ.Kind() != reflect.Struct {
 		return "", nil, errInvalidEntity
 	}
@@ -43,46 +43,17 @@ func InsertStmt(entity interface{}) (string, []interface{}, error) {
 	// 在这个遍历的过程中，你就可以把参数构造出来
 	// 如果你打算支持组合，那么这里你要深入解析每一个组合的结构体
 	// 并且层层深入进去
-	filedLen := typ.NumField()
-	for i := 0; i < filedLen; i++ {
-		filedName := snakeString(typ.Field(i).Name)
-		if (i + 1) != filedLen {
-			bd.WriteString("`" + filedName + "`,")
-		} else {
-			bd.WriteString("`" + filedName + "`) VALUES(")
-		}
+	getSqlFile(typ, &bd, 0, make(map[string]struct{}))
 
-	}
 	// 拼接 VALUES，达成 INSERT INTO XXX(col1, col2, col3) VALUES
 
 	// 再一次遍历所有的字段，要拼接成 INSERT INTO XXX(col1, col2, col3) VALUES(?,?,?)
 	// 注意，在第一次遍历的时候我们就已经拿到了参数的值，所以这里就是简单拼接 ?,?,?
 	var args []interface{}
-	for i := 0; i < filedLen; i++ {
-		var file string
-		v := refVal.Field(i)
-		switch v.Kind() {
-		case reflect.Int64:
-			if v.IsZero() {
-				file = "0"
-			} else {
-				file = strconv.FormatInt(v.Int(), 10)
-			}
-		case reflect.Ptr:
-			if v.IsZero() {
-				file = "0"
-			} else {
-				file = strconv.FormatInt(v.Elem().Int(), 10)
-			}
-		}
-		if (i + 1) != filedLen {
-			bd.WriteString(file + ",")
-		} else {
-			bd.WriteString(file + ");")
-		}
-
-		args = append(args, refVal.Field(i).Interface())
-
+	record := make(map[interface{}]interface{})
+	getSqlValue(refVal, &bd, 0, record)
+	for _, value := range record {
+		args = append(args, value)
 	}
 
 	return bd.String(), args, nil
@@ -107,4 +78,117 @@ func snakeString(s string) string {
 	}
 	//ToLower把大写字母统一转小写
 	return strings.ToLower(string(data[:]))
+}
+
+func getSqlFile(typ reflect.Type, sqlStr *strings.Builder, lv int, record map[string]struct{}) {
+
+	filedLen := typ.NumField()
+	for i := 0; i < filedLen; i++ {
+		v := typ.Field(i)
+		if v.Type.Kind() == reflect.Struct {
+			// 查看是否是SQL.NullXXX结构体
+			_, ok := v.Type.MethodByName("Value")
+			if !ok {
+				temp := lv + 1
+				getSqlFile(v.Type, sqlStr, temp, record)
+				continue
+			}
+		}
+
+		filedName := snakeString(v.Name)
+		if _, ok := record[filedName]; !ok {
+			if ((i + 1) == filedLen) && (lv == 0) {
+				sqlStr.WriteString("`" + filedName + "`) VALUES(")
+			} else {
+				sqlStr.WriteString("`" + filedName + "`,")
+			}
+			record[filedName] = struct{}{}
+		}
+	}
+
+}
+
+func getSqlValue(refVal reflect.Value, sqlStr *strings.Builder, lv int, record map[interface{}]interface{}) {
+
+	filedLen := refVal.NumField()
+	for i := 0; i < filedLen; i++ {
+		var file string
+		v := refVal.Field(i)
+		switch v.Kind() {
+		case reflect.Int64:
+			if v.IsZero() {
+				file = "0"
+			} else {
+				file = strconv.FormatInt(v.Int(), 10)
+			}
+			record[v.Addr()] = v.Interface()
+		case reflect.Uint64:
+			if v.IsZero() {
+				file = "0"
+			} else {
+				file = strconv.FormatUint(v.Uint(), 10)
+			}
+			record[v.Addr()] = v.Interface()
+		case reflect.Ptr:
+			if v.IsZero() {
+				// 这里暴力处理一下，只要是nil，全部转换成NULL
+				file = "NULL"
+			} else {
+				_, ok := v.Elem().Type().MethodByName("Value")
+				if !ok {
+					file = strconv.FormatInt(v.Elem().Int(), 10)
+				} else {
+					if v.Elem().FieldByName("Valid").Bool() {
+						file = getNullValue(v.Elem())
+					} else {
+						file = "NULL"
+					}
+				}
+			}
+			record[v.Addr()] = v.Interface()
+		case reflect.Struct:
+			// 查看是否是SQL.NullXXX结构体
+			_, ok := v.Type().MethodByName("Value")
+			if !ok {
+				temp := lv + 1
+				getSqlValue(v, sqlStr, temp, record)
+				continue
+			} else {
+				if v.FieldByName("Valid").Bool() {
+					file = getNullValue(v)
+				} else {
+					file = "NULL"
+				}
+				record[v.Addr()] = v.Interface()
+			}
+		case reflect.String:
+			if v.IsZero() {
+				file = ""
+			} else {
+				file = v.String()
+			}
+			record[v.Addr()] = v.Interface()
+		}
+
+		if ((i + 1) == filedLen) && (lv == 0) {
+			sqlStr.WriteString(file + ");")
+		} else {
+			sqlStr.WriteString(file + ",")
+		}
+
+	}
+
+}
+
+func getNullValue(refVal reflect.Value) string {
+
+	switch refVal.Field(0).Kind() {
+	case reflect.String:
+		return refVal.Field(0).String()
+	case reflect.Int32:
+		return strconv.FormatInt(refVal.Field(0).Int(), 10)
+	default:
+		return ""
+	}
+
 }
