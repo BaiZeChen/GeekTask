@@ -63,6 +63,10 @@ func (r *router) addRoute(method string, path string, handler HandleFunc) {
 	if root.handler != nil {
 		panic(fmt.Sprintf("web: 路由冲突[%s]", path))
 	}
+	// 判断一下是否最后一个节点是通配符节点
+	if root.path == "*" {
+		root.starChildIsEnd = true
+	}
 	root.handler = handler
 }
 
@@ -87,7 +91,15 @@ func (r *router) findRoute(method string, path string) (*matchInfo, bool) {
 			return nil, false
 		}
 		if matchParam {
-			mi.addValue(root.path[1:], s)
+			if root.regExpr != nil {
+				mi.addValue(root.paramChild.path[1:], s)
+			} else {
+				mi.addValue(root.path[1:], s)
+			}
+		}
+		// 如果是匹配到的是最后一个通用符节点，直接跳出
+		if root.starChildIsEnd {
+			break
 		}
 	}
 	mi.n = root
@@ -126,6 +138,9 @@ type node struct {
 	// 通配符 * 表达的节点，任意匹配
 	starChild *node
 
+	// 新增通配符是否是结尾
+	starChildIsEnd bool
+
 	paramChild *node
 	// 正则路由和参数路由都会使用这个字段
 	paramName string
@@ -141,6 +156,14 @@ type node struct {
 // 第三个返回值 bool 代表是否命中
 func (n *node) childOf(path string) (*node, bool, bool) {
 	if n.children == nil {
+		if (n.regChild != nil) && (n.regChild.regExpr.MatchString(path)) {
+			if n.regChild.paramChild != nil {
+				return n.regChild, true, true
+			} else {
+				return n.regChild, false, true
+			}
+		}
+
 		if n.paramChild != nil {
 			return n.paramChild, true, true
 		}
@@ -148,6 +171,15 @@ func (n *node) childOf(path string) (*node, bool, bool) {
 	}
 	res, ok := n.children[path]
 	if !ok {
+
+		if (n.regChild != nil) && (n.regChild.regExpr.MatchString(path)) {
+			if n.regChild.paramChild != nil {
+				return n.regChild, true, true
+			} else {
+				return n.regChild, false, true
+			}
+		}
+
 		if n.paramChild != nil {
 			return n.paramChild, true, true
 		}
@@ -170,6 +202,36 @@ func (n *node) childOrCreate(path string) *node {
 			n.starChild = &node{path: path}
 		}
 		return n.starChild
+	}
+
+	// 新增正则路由
+	boundaryStart, boundaryEnd := strings.Index(path, "("), strings.Index(path, ")")
+	if (boundaryStart != -1) && (boundaryEnd != -1) {
+		regStr := path[boundaryStart+1 : boundaryEnd]
+		compile, err := regexp.Compile(regStr)
+		if err != nil {
+			panic(fmt.Sprintf("web: 正则路由定义有误，原因：%s", err.Error()))
+		}
+
+		n.regChild = &node{path: regStr, regExpr: compile}
+
+		// 判断一下开头，是否包含参数路由
+		if path[0] == ':' {
+			if n.starChild != nil {
+				panic(fmt.Sprintf("web: 非法路由，已有通配符路由。不允许同时注册通配符路由和参数路由 [%s]", path))
+			}
+			if n.paramChild != nil {
+				if n.paramChild.path != path {
+					panic(fmt.Sprintf("web: 路由冲突，参数路由冲突，已有 %s，新注册 %s", n.paramChild.path, path))
+				}
+			} else {
+				n.regChild.paramChild = &node{path: path[:boundaryStart]}
+			}
+
+		}
+
+		return n.regChild
+
 	}
 
 	// 以 : 开头，我们认为是参数路由
