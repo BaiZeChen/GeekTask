@@ -28,7 +28,7 @@ func (h *HttpServer) ServeHTTP(writer http.ResponseWriter, request *http.Request
 func NewSdkHttpServer(name string, builders ...middleware.MiddlewareBuild) Server {
 
 	// 改用我们的树
-	handler := route.NewMapRoute()
+	handler := route.NewTreeRoute()
 	// 因为我们是一个链，所以我们把最后的业务逻辑处理，也作为一环
 	var root middleware.Middleware = handler.Core
 	// 从后往前把filter串起来
