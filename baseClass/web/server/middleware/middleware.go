@@ -1,6 +1,8 @@
 package middleware
 
-import "GeekTask/web/server/route"
+import (
+	"GeekTask/baseClass/web/server/route"
+)
 
 type MiddlewareBuild func(next Middleware) Middleware
 
