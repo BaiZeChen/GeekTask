@@ -11,7 +11,7 @@ type HandlerBasedOnTree struct {
 }
 
 func (h *HandlerBasedOnTree) Core(c *Context) {
-	node, err := h.match(h.root[c.R.Method], c.R.URL.Path)
+	node, err := h.match(h.root[c.R.Method], c)
 	if err != nil {
 		c.W.WriteHeader(http.StatusNotFound)
 		_, _ = c.W.Write([]byte("not any router match"))
@@ -42,7 +42,9 @@ func (h *HandlerBasedOnTree) add(method string, pattern string, handlerFunc Hand
 
 }
 
-func (h *HandlerBasedOnTree) match(root *Node, pattern string) (*Node, error) {
+func (h *HandlerBasedOnTree) match(root *Node, c *Context) (*Node, error) {
+
+	pattern := c.R.URL.Path
 	// 去除头尾可能有的/，然后按照/切割成段
 	front := root
 	paths := strings.Split(strings.Trim(pattern, "/"), "/")
@@ -51,6 +53,9 @@ func (h *HandlerBasedOnTree) match(root *Node, pattern string) (*Node, error) {
 		front, ok = root.FindChildrenNode(front, path)
 		if !ok {
 			return nil, errors.New("没有找到对应的路由")
+		}
+		if front.nodeType == nodeTypeParam {
+			c.PathParams[front.path[1:]] = path
 		}
 	}
 	if front.handler == nil {
