@@ -6,6 +6,7 @@ import (
 )
 
 type HttpServer struct {
+	route *route.Router
 }
 
 func (h *HttpServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -13,18 +14,34 @@ func (h *HttpServer) ServeHTTP(writer http.ResponseWriter, request *http.Request
 		Req:  request,
 		Resp: writer,
 	}
-	h.serve(ctx)
-
+	h.handle(ctx)
 }
 
 func (h *HttpServer) Start(addr string) error {
 	return http.ListenAndServe(addr, h)
 }
 
-func (h *HttpServer) AddRoute(method, path string, handler HandleFunc) {
-	panic("implement me")
+func (h *HttpServer) RegisterRoute(method, path string, handler route.HandleFunc) {
+	err := h.route.Register(method, path, handler)
+	if err != nil {
+		panic(err)
+	}
 }
 
-func (h *HttpServer) serve(ctx *route.Context) {
+func (h *HttpServer) Post(path string, handler route.HandleFunc) {
+	h.RegisterRoute(http.MethodPost, path, handler)
+}
 
+func (h *HttpServer) Get(path string, handler route.HandleFunc) {
+	h.RegisterRoute(http.MethodGet, path, handler)
+}
+
+func (h *HttpServer) handle(ctx *route.Context) {
+	routeHandle, ok := h.route.Find(ctx.Req.Method, ctx.Req.URL.Path, ctx)
+	if !ok {
+		ctx.Resp.WriteHeader(404)
+		ctx.Resp.Write([]byte("Not Found"))
+		return
+	}
+	routeHandle(ctx)
 }
