@@ -66,14 +66,16 @@ func (r *Router) Find(method, pattern string, ctx *Context) (HandleFunc, bool) {
 func (r *Router) createChildNode(root *Node, paths []string, handler HandleFunc) error {
 	cue := root
 	for _, path := range paths {
-		if node, ok := r.findChildrenNode(cue, path); ok {
-			cue = node
-			// /user/:id  和 /user/:name不能同时出现
-			if path[:1] == ":" {
-				return errors.New("参数路由只能注册一次")
-			}
-		} else {
-			var node *Node
+		var (
+			node *Node
+			ok   bool
+			err  error
+		)
+		node, ok, err = r.findChildrenNode(cue, path)
+		if err != nil {
+			return err
+		}
+		if !ok {
 			if path == "*" {
 				node = NewAnyNode(path)
 				cue.children = append(cue.children, node)
@@ -84,28 +86,30 @@ func (r *Router) createChildNode(root *Node, paths []string, handler HandleFunc)
 				node = NewStaticNode(path)
 				cue.children = append(cue.children, node)
 			}
-			cue = node
 		}
+		cue = node
 	}
 
 	cue.handler = handler
 	return nil
 }
 
-func (r *Router) findChildrenNode(root *Node, path string) (*Node, bool) {
+func (r *Router) findChildrenNode(root *Node, path string) (*Node, bool, error) {
 	for _, child := range root.children {
 		// 针对参数路由特殊匹配处理
 		if path[:1] == ":" {
 			if child.nodeType == NODE_PARA {
-				return child, true
+				return nil, false, errors.New("参数路由不允许重复")
 			}
+		} else if (path[:1] == ":" && child.nodeType == NODE_ANY) || (path == "*" && child.nodeType == NODE_PARA) {
+			return nil, false, errors.New("参数路由不允许重复")
 		} else {
 			if child.path == path {
-				return child, true
+				return child, true, nil
 			}
 		}
 	}
-	return nil, false
+	return nil, false, nil
 }
 
 func (r *Router) matchNode(root *Node, path string) (*Node, bool) {

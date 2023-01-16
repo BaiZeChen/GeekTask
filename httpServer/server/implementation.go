@@ -7,6 +7,7 @@ import (
 
 type HttpServer struct {
 	route *route.Router
+	ms    []route.Middleware
 }
 
 func (h *HttpServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -14,7 +15,17 @@ func (h *HttpServer) ServeHTTP(writer http.ResponseWriter, request *http.Request
 		Req:  request,
 		Resp: writer,
 	}
-	h.handle(ctx)
+	root := h.handle
+	msLen := len(h.ms)
+	for i := msLen; i >= 0; i-- {
+		root = h.ms[i](root)
+	}
+	root(ctx)
+}
+
+// 增加中间件
+func (h *HttpServer) Use(ms ...route.Middleware) {
+	h.ms = append(h.ms, ms...)
 }
 
 func (h *HttpServer) Start(addr string) error {

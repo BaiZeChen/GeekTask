@@ -56,6 +56,9 @@ type matchFunc func(path string) bool
 
 type HandleFunc func(ctx *Context)
 
+// 中间件
+type Middleware func(next HandleFunc) HandleFunc
+
 type Node struct {
 	nodeType int
 	path     string
