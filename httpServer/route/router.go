@@ -7,7 +7,8 @@ import (
 )
 
 type Router struct {
-	tree map[string]*Node
+	tree   map[string]*Node
+	msTree *Node
 }
 
 func (r *Router) Register(method, path string, handler HandleFunc) error {
@@ -17,15 +18,36 @@ func (r *Router) Register(method, path string, handler HandleFunc) error {
 	front := r.tree[method]
 
 	pathSlice := strings.Split(strings.Trim(path, "/"), "/")
-	err := r.createChildNode(front, pathSlice, handler)
+	node, err := r.createChildNode(front, pathSlice)
 	if err != nil {
 		return err
 	}
+	node.handler = handler
 
 	return nil
 }
 
-func (r *Router) Find(method, pattern string, ctx *Context) (HandleFunc, bool) {
+func (r *Router) RegisterMiddleWare(path string, middlewares ...Middleware) error {
+	middlewaresLen := len(middlewares)
+	if middlewaresLen == 0 {
+		return nil
+	}
+	if r.msTree == nil {
+		r.msTree = NewRootNode()
+	}
+	front := r.msTree
+
+	pathSlice := strings.Split(strings.Trim(path, "/"), "/")
+	node, err := r.createChildNode(front, pathSlice)
+	if err != nil {
+		return err
+	}
+	node.middlewares = middlewares
+
+	return nil
+}
+
+func (r *Router) FindHandle(method, pattern string, ctx *Context) (HandleFunc, bool) {
 	var (
 		is_find bool
 		handle  HandleFunc
@@ -63,7 +85,29 @@ func (r *Router) Find(method, pattern string, ctx *Context) (HandleFunc, bool) {
 
 }
 
-func (r *Router) createChildNode(root *Node, paths []string, handler HandleFunc) error {
+func (r *Router) FindMiddle(pattern string) []Middleware {
+	var (
+		ms []Middleware
+	)
+
+	var root *Node
+	if r.msTree == nil {
+		return nil
+	}
+
+	root = r.msTree
+	patternSlice := strings.Split(strings.Trim(pattern, "/"), "/")
+	for _, s := range patternSlice {
+		node, find := r.matchNode(root, s)
+		if !find {
+			return nil
+		}
+		ms = node.middlewares
+	}
+	return ms
+}
+
+func (r *Router) createChildNode(root *Node, paths []string) (*Node, error) {
 	cue := root
 	for _, path := range paths {
 		var (
@@ -73,7 +117,7 @@ func (r *Router) createChildNode(root *Node, paths []string, handler HandleFunc)
 		)
 		node, ok, err = r.findChildrenNode(cue, path)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if !ok {
 			if path == "*" {
@@ -90,8 +134,7 @@ func (r *Router) createChildNode(root *Node, paths []string, handler HandleFunc)
 		cue = node
 	}
 
-	cue.handler = handler
-	return nil
+	return cue, nil
 }
 
 func (r *Router) findChildrenNode(root *Node, path string) (*Node, bool, error) {

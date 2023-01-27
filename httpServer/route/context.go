@@ -14,6 +14,11 @@ type Context struct {
 	Params map[string]string
 	// 缓存的数据
 	cacheQueryValues url.Values
+
+	// 缓存响应的数据
+	// 这数据会在最后进行刷新
+	RespStatusCode int
+	RespData       []byte
 }
 
 func (c *Context) JsonBind(val interface{}) error {

@@ -64,5 +64,6 @@ type Node struct {
 	path     string
 	children []*Node
 	matchFunc
-	handler HandleFunc
+	handler     HandleFunc
+	middlewares []Middleware
 }
