@@ -1,6 +1,7 @@
 package web
 
 import (
+	"GeekTask/fifthWeek/internal/domain"
 	"GeekTask/fifthWeek/internal/service"
 	"GeekTask/fifthWeek/internal/service/mocks"
 	"bytes"
@@ -43,6 +44,77 @@ func TestUserHandler_LoginSMS(t *testing.T) {
 			},
 			wantCode: 5,
 			wantBody: "系统错误",
+		},
+		{
+			name: "codeSvc验证码有错误",
+			mock: func(ctrl *gomock.Controller) (service.UserService, service.CodeService) {
+				codeSvc := mocks.NewMockCodeService(ctrl)
+				codeSvc.EXPECT().
+					Verify(gomock.Any(), gomock.Eq(biz), gomock.Eq("1101121131141"), gomock.Eq("123456")).
+					Return(false, nil)
+				return nil, codeSvc
+			},
+			reqBuilder: func(t *testing.T) *http.Request {
+				body := bytes.NewBuffer([]byte(`{"phone":"1101121131141","code":"123456"}`))
+				req, err := http.NewRequest(http.MethodPost, signupUrl, body)
+				req.Header.Set("Content-Type", "application/json")
+				if err != nil {
+					t.Fatal(err)
+				}
+				return req
+			},
+			wantCode: 4,
+			wantBody: "验证码有误",
+		},
+		{
+			name: "用户进行登录/注册操作数据库有错误",
+			mock: func(ctrl *gomock.Controller) (service.UserService, service.CodeService) {
+				codeSvc := mocks.NewMockCodeService(ctrl)
+				codeSvc.EXPECT().
+					Verify(gomock.Any(), gomock.Eq(biz), gomock.Eq("1101121131141"), gomock.Eq("123456")).
+					Return(true, nil)
+				userSvc := mocks.NewMockUserService(ctrl)
+				userSvc.EXPECT().
+					FindOrCreate(gomock.Any(), gomock.Eq("1101121131141")).
+					Return(domain.User{}, errors.New("随便一个错误"))
+				return userSvc, codeSvc
+			},
+			reqBuilder: func(t *testing.T) *http.Request {
+				body := bytes.NewBuffer([]byte(`{"phone":"1101121131141","code":"123456"}`))
+				req, err := http.NewRequest(http.MethodPost, signupUrl, body)
+				req.Header.Set("Content-Type", "application/json")
+				if err != nil {
+					t.Fatal(err)
+				}
+				return req
+			},
+			wantCode: 5,
+			wantBody: "系统错误",
+		},
+		{
+			name: "用户登录/注册成功",
+			mock: func(ctrl *gomock.Controller) (service.UserService, service.CodeService) {
+				codeSvc := mocks.NewMockCodeService(ctrl)
+				codeSvc.EXPECT().
+					Verify(gomock.Any(), gomock.Eq(biz), gomock.Eq("1101121131141"), gomock.Eq("123456")).
+					Return(true, nil)
+				userSvc := mocks.NewMockUserService(ctrl)
+				userSvc.EXPECT().
+					FindOrCreate(gomock.Any(), gomock.Eq("1101121131141")).
+					Return(domain.User{}, nil)
+				return userSvc, codeSvc
+			},
+			reqBuilder: func(t *testing.T) *http.Request {
+				body := bytes.NewBuffer([]byte(`{"phone":"1101121131141","code":"123456"}`))
+				req, err := http.NewRequest(http.MethodPost, signupUrl, body)
+				req.Header.Set("Content-Type", "application/json")
+				if err != nil {
+					t.Fatal(err)
+				}
+				return req
+			},
+			wantCode: 0,
+			wantBody: "验证码校验通过",
 		},
 	}
 
