@@ -10,7 +10,12 @@ import (
 	"time"
 )
 
-func NewFailoverSMSService(svcs []sms.Service, retry, threshold int) *FailoverSMSService {
+/*
+	由于goroutine过多，就不写测试了（测也测不出啥）
+	思想概述：通过平均响应时间，来对各个服务进行优先级排序
+*/
+
+func NewFailoverSMSService(svcs []sms.Service, smsRepo repository.SMSRepository, retry, threshold int) *FailoverSMSService {
 	if retry <= 0 {
 		// 默认重试三次
 		retry = 3
@@ -32,6 +37,7 @@ func NewFailoverSMSService(svcs []sms.Service, retry, threshold int) *FailoverSM
 		ch:         make(chan struct{}),
 		ticker:     time.NewTicker(3 * time.Hour),   // 3个小时一次
 		monitor:    time.NewTicker(1 * time.Minute), // 1分钟1次
+		smsRepo:    smsRepo,
 	}
 	go failoverSMSService.avgTime()        // 监控平均响应时间
 	go failoverSMSService.monitorTimeout() // 用来处理异步数据
